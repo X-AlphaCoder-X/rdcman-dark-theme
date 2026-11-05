@@ -117,6 +117,8 @@ There are also a few optional tweaks you can try. Create `%APPDATA%\rdcman-color
 | `nocolorskip` | Pass every tree colour message on, including ones that change nothing |
 | `sessionguard` | Also paint the area behind each session in the theme colour. Off by default, because it paints at the moment focus moves into a session |
 
+**RDCMan showed an error ending in "Dispose() cannot be called while doing CreateHandle()".** Version 1.1.1 removes the most likely cause. If it still happens, the script writes `%TEMP%\rdcman-color-crash.txt` with the steps it took just before. Attach that file to an [issue](../../issues). It holds window types and the call stack, never window titles or server names, but read it first anyway.
+
 **Want the white look back?** Just start RDCMan the normal way, without the script. Nothing is changed permanently.
 
 ## Requirements

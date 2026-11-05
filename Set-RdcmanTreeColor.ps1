@@ -1273,6 +1273,8 @@ public static class RdcPaint
     {
         if (started) return;
         started = true;
+        try { AppDomain.CurrentDomain.FirstChanceException += OnFirstChance; }
+        catch (Exception ex) { Log("crash note not armed: " + ex.GetType().Name + " " + ex.Message); }
         try { GuardOn = !System.IO.File.Exists(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rdcman-color-noguard.txt")); } catch { }
         LoadOptions();
         if (Opt("trace")) TraceOn = true;
@@ -1339,12 +1341,13 @@ public static class RdcPaint
             if (smoothTrees.Count > 1000) smoothTrees.Clear();
             CleanBackgroundHooks();
             if (captioned.Count > 1000) captioned.Clear();
+            if (pending.Count > 1000) pending.Clear();
             if (renderer == null) renderer = new Renderer();
             if (ToolStripManager.Renderer != renderer) ToolStripManager.Renderer = renderer;
             foreach (Form f in forms)
             {
                 if (f.IsDisposed || !f.IsHandleCreated || f.InvokeRequired) continue;
-                Caption(f);
+                if (ReadyForWork(f)) Caption(f);      // a form still being built gets it from WhenCreated
                 Walk(f);
             }
         }
@@ -1404,10 +1407,11 @@ public static class RdcPaint
                 }
                 return;
             }
-            if (f != null) Caption(f);
+            Note("shown " + KindOf(c));
+            if (f != null) WhenCreated(f, PendingCaption, "caption", delegate { Caption(f); });
             Walk(c);
         }
-        catch { }
+        catch (Exception ex) { Note("shown-handler failed: " + ex.GetType().Name); }
     }
 
     // New controls are colored the moment they are added, before they are drawn.
@@ -1416,7 +1420,11 @@ public static class RdcPaint
         if (watched.Contains(c)) return;
         watched.Add(c);
         c.ControlAdded += delegate (object sender, ControlEventArgs e) { try { Walk(e.Control); } catch { } };
-        c.HandleCreated += delegate (object sender, EventArgs e) { try { Style((Control)sender); } catch { } };
+        c.HandleCreated += delegate (object sender, EventArgs e)
+        {
+            try { Control x = (Control)sender; Note("created " + KindOf(x)); Style(x); }
+            catch (Exception ex) { Note("created-handler failed: " + ex.GetType().Name); }
+        };
         // The moment something changes a color, put ours back (before the next paint, not on the next sweep).
         c.BackColorChanged += delegate (object sender, EventArgs e)
         {
@@ -1463,7 +1471,23 @@ public static class RdcPaint
         foreach (Control k in kids) Walk(k);
     }
 
+    // Colors at once (cheap, and what stops the white flash); the window work waits until the window
+    // and its form are fully created (WhenCreated), so it can never run in the middle of a window's
+    // creation.
     static void Style(Control c)
+    {
+        try
+        {
+            if (c.BackColor != CBack) c.BackColor = CBack;
+            if (c.ForeColor != CText) c.ForeColor = CText;
+            TreeView lines = c as TreeView;
+            if (lines != null && lines.LineColor != CLine) lines.LineColor = CLine;
+        }
+        catch (Exception ex) { Note("colors failed " + KindOf(c) + ": " + ex.GetType().Name); }
+        if (c.IsHandleCreated) WhenCreated(c, PendingStyle, "style", delegate { StyleWindow(c); });
+    }
+
+    static void StyleWindow(Control c)
     {
         try
         {
@@ -1474,10 +1498,7 @@ public static class RdcPaint
                 else if (c is ListView && !Opt("darklist")) { ProtectList(c); UpdateHeader(c); }
                 else if (TraceOn) ProtectPassive(c);                  // recorder only
             }
-            if (c.BackColor != CBack) c.BackColor = CBack;
-            if (c.ForeColor != CText) c.ForeColor = CText;
             TreeView tv = c as TreeView;
-            if (tv != null && tv.LineColor != CLine) tv.LineColor = CLine;
             if (tv != null && tv.IsHandleCreated && !smoothTrees.Contains(tv.Handle))
             {
                 smoothTrees.Add(tv.Handle);
@@ -1493,7 +1514,150 @@ public static class RdcPaint
             else if (c is ComboBox)
                 Theme(c, Dark ? "DarkMode_CFD" : "CFD");
         }
-        catch { }
+        catch (Exception ex) { Note("style failed " + KindOf(c) + ": " + ex.GetType().Name); }
+    }
+
+    // ---- windows that are still being built ---------------------------------------------------------
+    // RDCMan can process messages while a window (a properties dialog, say) is still being created, and
+    // our callbacks then run in the middle of that creation. Taking the window over, changing its theme or
+    // redrawing its frame at that moment can end in WinForms' "Dispose() cannot be called while doing
+    // CreateHandle()". Control.Created is true once a control is fully created, so the work waits for it.
+    const int PendingStyle = 1, PendingCaption = 2;
+    const int DeferTries = 60;                          // retried every 30 ms, so about 1.8 s at most
+    static readonly Dictionary<Control, int> pending = new Dictionary<Control, int>();
+
+    // Ready = the window has a handle and its form is not in the middle of being created. Only the form's
+    // Created flag is used: a child whose handle was made some other way can stay "not Created" for good.
+    static bool ReadyForWork(Control c)
+    {
+        if (c == null || c.IsDisposed || !c.IsHandleCreated) return false;
+        Form f = c.FindForm();
+        return f == null || (!f.IsDisposed && f.Created);
+    }
+
+    static void WhenCreated(Control c, int kind, string what, MethodInvoker work)
+    {
+        if (ReadyForWork(c)) { work(); return; }
+        int flags;
+        pending.TryGetValue(c, out flags);
+        if ((flags & kind) != 0) return;                // already waiting for this window
+        pending[c] = flags | kind;
+        Note("wait " + what + " " + KindOf(c));
+        // First try: a posted message runs before the window's first paint, so the theme is not late.
+        try { c.BeginInvoke(new MethodInvoker(delegate { RunWhenCreated(c, kind, what, work, 0); })); }
+        catch (Exception ex)
+        {
+            ClearPending(c, kind);
+            Note("wait failed " + what + " " + KindOf(c) + ": " + ex.GetType().Name);
+            Log("window work not scheduled (" + what + " " + KindOf(c) + "): " + ex.Message);
+        }
+    }
+
+    static void RunWhenCreated(Control c, int kind, string what, MethodInvoker work, int tries)
+    {
+        if (c.IsDisposed) { ClearPending(c, kind); Note("dropped " + what + " (window closed)"); return; }
+        if (!ReadyForWork(c))
+        {
+            if (tries >= DeferTries && c.IsHandleCreated)
+            {
+                // A form that never reports Created (its handle was made some other way) is not being
+                // built any more after this long: do the work as before, so it still gets its theme.
+                ClearPending(c, kind);
+                Note("ran after waiting " + (DeferTries * 30) + " ms: " + what + " " + KindOf(c));
+                try { work(); }
+                catch (Exception ex)
+                {
+                    Note("failed " + what + " " + KindOf(c) + ": " + ex.GetType().Name);
+                    Log("window work failed (" + what + " " + KindOf(c) + "): " + ex);
+                }
+                return;
+            }
+            if (tries >= DeferTries)
+            {
+                ClearPending(c, kind);
+                Note("dropped " + what + " (no handle) " + KindOf(c));
+                return;
+            }
+            System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+            timer.Interval = 30;
+            timer.Tick += delegate { timer.Stop(); timer.Dispose(); RunWhenCreated(c, kind, what, work, tries + 1); };
+            timer.Start();
+            return;
+        }
+        ClearPending(c, kind);
+        try { work(); Note("done " + what + " " + KindOf(c)); }
+        catch (Exception ex)
+        {
+            Note("failed " + what + " " + KindOf(c) + ": " + ex.GetType().Name);
+            Log("window work failed (" + what + " " + KindOf(c) + "): " + ex);
+        }
+    }
+
+    static void ClearPending(Control c, int kind)
+    {
+        int flags;
+        if (!pending.TryGetValue(c, out flags)) return;
+        flags &= ~kind;
+        if (flags == 0) pending.Remove(c); else pending[c] = flags;
+    }
+
+    // A window's kind and handle for the crash note. Never its title: titles can hold server names.
+    static string KindOf(Control c)
+    {
+        try { return c.GetType().Name + (c.IsHandleCreated ? "@" + c.Handle.ToInt64().ToString("X") : ""); }
+        catch (Exception ex) { return "?(" + ex.GetType().Name + ")"; }
+    }
+
+    // ---- crash note -----------------------------------------------------------------------------------
+    // The last 64 window steps are kept in memory. Only when WinForms reports a window closed or disposed
+    // while it was being created are they written, with the call stack at that moment, to
+    // %TEMP%\rdcman-color-crash.txt (replaced by the first note of each RDCMan run, at most 5 per run).
+    // The exception itself is left alone: RDCMan behaves as before.
+    static readonly string[] recent = new string[64];
+    static int recentNext;
+    static readonly object recentLock = new object();
+    static int crashNotes;
+    [ThreadStatic] static bool inCrashNote;
+
+    static void Note(string what)
+    {
+        string line = DateTime.Now.ToString("HH:mm:ss.fff") + " " + what;
+        lock (recentLock) { recent[recentNext] = line; recentNext = (recentNext + 1) % recent.Length; }
+    }
+
+    static void OnFirstChance(object sender, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs e)
+    {
+        if (inCrashNote) return;                        // an exception in here must not re-enter
+        inCrashNote = true;
+        try
+        {
+            InvalidOperationException ex = e.Exception as InvalidOperationException;
+            if (ex == null || ex.Message == null || ex.Message.IndexOf("CreateHandle", StringComparison.Ordinal) < 0) return;
+            int number = Interlocked.Increment(ref crashNotes);
+            if (number > 5) return;                                              // at most 5 notes per RDCMan run
+            string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rdcman-color-crash.txt");
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("==== " + DateTime.Now.ToString("s") + "  runtime " + Environment.Version + "  os " + Environment.OSVersion.VersionString);
+            sb.AppendLine(ex.GetType().FullName + ": " + ex.Message);
+            sb.AppendLine("Call stack at that moment:");
+            sb.AppendLine(Environment.StackTrace);
+            sb.AppendLine("Last window steps of the color script, oldest first:");
+            lock (recentLock)
+            {
+                for (int i = 0; i < recent.Length; i++)
+                {
+                    string s = recent[(recentNext + i) % recent.Length];
+                    if (s != null) sb.AppendLine("  " + s);
+                }
+            }
+            // The first note of an RDCMan run replaces the file (the last run's note stays until then, so a
+            // restart after a crash does not lose it); later notes of the same run are added below it.
+            if (number == 1) System.IO.File.WriteAllText(path, sb.ToString());
+            else System.IO.File.AppendAllText(path, sb.ToString());
+            Log("crash note written to " + path);
+        }
+        catch (Exception ex2) { Log("crash note not written: " + ex2.GetType().Name + " " + ex2.Message); }
+        finally { inCrashNote = false; }
     }
 
     // When a scrollbar appears or disappears (e.g. a group is expanded), repaint the frame
