@@ -1,0 +1,21 @@
+name: Feature request or new theme
+description: Suggest an improvement or a built-in theme
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+      description: The change, and what it would help you do.
+    validations:
+      required: true
+  - type: input
+    id: colours
+    attributes:
+      label: Theme colours (for a new theme)
+      placeholder: "back #1E1E1E, text #DCDCDC, lines #3C3C3C"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots or links that show what you mean.

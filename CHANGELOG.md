@@ -1,6 +1,8 @@
 # Changelog
 
-## 2026-11-05
+Versions follow [Semantic Versioning](https://semver.org/). Each version is a [GitHub release](../../releases) with a zip of the files.
+
+## 1.1.0 - 2026-11-05
 
 ### Changed
 
@@ -17,6 +19,6 @@
 - Better debugging. The trace (`-Trace` or `T` in the menu) now records when the popup's header bar is taken over and when the server list gets dark scrollbars with classic rows, and the script prints whether freeze focus is on when it starts RDCMan.
 - New words for `rdcman-color-options.txt`: `darktree`, `notheme`, `lightscroll`, `lightheader`, `darklist`, `handsoff` and `freezefocus`. The README lists what each one does.
 
-## 2026-10-24
+## 1.0.0 - 2026-10-24
 
 First release: the theme script, the `rdc.bat` launcher and six built-in themes plus custom colours.

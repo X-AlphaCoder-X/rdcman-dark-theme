@@ -1,0 +1,59 @@
+name: Bug report
+description: Something is the wrong colour, flickers, or the script fails
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please blur any server names in screenshots you don't want to share.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start rdc.bat and pick theme 2
+        2. Click a server, then the session
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Run winver. For example "Windows 11 24H2" or "Windows Server 2019 1809".
+    validations:
+      required: true
+  - type: input
+    id: rdcman
+    attributes:
+      label: RDCMan version
+      description: Help, About in RDCMan. For example 2.93.
+    validations:
+      required: true
+  - type: input
+    id: theme
+    attributes:
+      label: Theme
+      description: The built-in theme you picked, or your custom colours.
+  - type: textarea
+    id: trace
+    attributes:
+      label: Trace or script output
+      description: For flicker or colour problems, start with -Trace (or press T), reproduce, close RDCMan, and attach %TEMP%\rdcman-color-trace.txt. Paste any error the PowerShell window showed.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the open issues and this isn't one of them.
+          required: true
+        - label: I started RDCMan through rdc.bat or the script, not on its own.
+          required: true

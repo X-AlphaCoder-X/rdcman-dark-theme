@@ -126,6 +126,10 @@ There are also a few optional tweaks you can try. Create `%APPDATA%\rdcman-color
 - [RDCMan](https://learn.microsoft.com/en-us/sysinternals/downloads/rdcman) 2.x from Sysinternals
 - Administrator rights (the script asks for them via UAC)
 
+## Contributing
+
+Bug reports, fixes and new themes are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to record a trace and test a change, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version. Report security problems privately, as [SECURITY.md](SECURITY.md) describes.
+
 ## License
 
 [MIT](LICENSE). Not affiliated with Microsoft. RDCMan is a Microsoft Sysinternals tool.
