@@ -33,16 +33,18 @@ RDCMan opens in the new colours.
   7  Custom      (type your own hex colors)
   P  Change RDCMan location
   B  Background around a small session: On  (press B to switch)
+  F  Freeze focus: ON  (press F to switch)
   T  Record a blink trace (this run only): OFF  (press T to switch)
   Q  Quit
 ```
 
 | Key | What it does |
 |---|---|
-| `1`–`6` | Pick one of the built-in themes. `2` (Dark) is the classic dark mode. |
+| `1` to `6` | Pick one of the built-in themes. `2` (Dark) is the classic dark mode. |
 | `7` | Custom. Type your own background and text colour as `#RRGGBB`. |
 | `P` | Tell it where RDCMan is (a folder or the `.exe`). It remembers your choice. |
 | `B` | Toggle whether the empty space around a small session window gets coloured too. |
+| `F` | Toggle freeze focus (on by default). While the server list gains or loses focus, its repainting is paused, so RDCMan's own colour resets can't make it flicker. A change applies the next time RDCMan starts. |
 | `T` | Record a debug trace for this run (see [Troubleshooting](#troubleshooting)). |
 | `Q` | Quit. |
 
@@ -51,6 +53,7 @@ RDCMan opens in the new colours.
 - **Start RDCMan through the script from now on.** The menu bar and panels are drawn inside RDCMan, so they can't be recoloured from outside. The script starts RDCMan itself and recolours it from the inside.
 - **Keep the PowerShell window open.** Closing it closes RDCMan too. To hide that window, see [Hidden shortcut](#hidden-shortcut).
 - **Finding RDCMan.** The script looks in the folder you set with `P`, then `C:\Tools\RDCMan`, then any RDCMan that's already running, then the script's own folder, `Downloads`, `Desktop`, and `Program Files\Microsoft\Remote Desktop Connection Manager`. If it can't find RDCMan, it asks.
+- **The server list keeps its classic rows.** By default only its colours change, and its scrollbar is dark. The animated dark theme made the selected row fade through the background colour every time focus moved, which looked like a blink. Add `darktree` to the options file (see [Troubleshooting](#troubleshooting)) if you want it back.
 - **Nothing is installed.** Your settings live in a few small text files in `%APPDATA%` (`rdcman-color-*.txt`). Delete them to reset.
 
 ## Command-line use
@@ -87,6 +90,8 @@ Closing RDCMan ends it.
 
 **The server list flickers or blinks when you click between it and a session.**
 
+Freeze focus (`F` in the menu) is on by default and stops most of this. If you still see it:
+
 1. Start with `-Trace`, or press `T` in the menu.
 2. Click the session, then the server list, then the session again, a few times.
 3. Close RDCMan.
@@ -101,6 +106,16 @@ There are also a few optional tweaks you can try. Create `%APPDATA%\rdcman-color
 | `keeptreefill` | Use the older way of filling the list background |
 | `keephot` | Leave hot-tracking alone |
 | `keepfade` | Leave the expander fade alone |
+| `selectcolors` | Swap the system selected-row colours for theme colours |
+| `darktree` | Give the server list the animated dark theme back (dark scrollbar, but the selected row blinks on focus changes) |
+| `notheme` | Draw the server list rows the classic way (the default). The scrollbar stays dark unless `lightscroll` is also set |
+| `lightscroll` | Leave the server list scrollbar light |
+| `lightheader` | Leave the column header bar of the "connect servers" popup white |
+| `darklist` | Give the popup's list the animated dark theme instead of classic rows |
+| `handsoff` | Don't turn on double buffering for the server list |
+| `freezefocus` | Pause the server list's painting while it gains or loses focus. The `F` menu setting wins over this word |
+| `nocolorskip` | Pass every tree colour message on, including ones that change nothing |
+| `sessionguard` | Also paint the area behind each session in the theme colour. Off by default, because it paints at the moment focus moves into a session |
 
 **Want the white look back?** Just start RDCMan the normal way, without the script. Nothing is changed permanently.
 

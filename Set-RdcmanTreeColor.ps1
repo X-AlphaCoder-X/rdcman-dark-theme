@@ -40,9 +40,19 @@
       keephot       leave hot-tracking alone      keepfade   leave expander fading alone
       selectcolors  swap the system selected-row colors for theme colors (no visible effect on the
                     tested machine: the tree draws its selection through the dark theme)
-      freezefocus   experiment: while the server list handles gaining/losing focus its painting is
-                    paused, so RDCMan's own color calls (UpdateColors) cannot trigger repaints; only the
-                    selected row is repainted afterwards
+      darktree      give the server list the animated dark theme back (dark scrollbar, but the selected
+                    row fades between its two greys on every focus change = the blink). By default the
+                    list is handled like stock RDCMan and only its colors are ours.
+      notheme       server list rows are drawn the classic way (default); its scrollbar still gets the
+                    dark theme unless lightscroll is also given
+      lightscroll   leave the server list scrollbar light (no theme on the list at all)
+      lightheader   leave the column header bar of the "connect servers" popup alone (white)
+      darklist      give the popup's list the animated dark theme again instead of classic rows
+      handsoff      do not turn on double buffering for the server list
+      freezefocus   while the server list handles gaining/losing focus its painting is paused, so
+                    RDCMan's own color calls (UpdateColors) cannot trigger repaints; only the selected
+                    row is repainted afterwards. Switch it in the menu with F (on by default); the menu
+                    setting wins over this file.
       nocolorskip   pass every tree color message on (the old behavior) instead of ignoring ones that change nothing
       sessionguard  also paint the area behind each RDP session in the theme color (this was always on
                     before; off now because it paints at the very moment focus moves into a session)
@@ -228,6 +238,17 @@ function Save-SessionBg {
 }
 function Get-SessionBgText { if ($script:sessionBg) { 'ON' } else { 'OFF' } }
 
+# ---- remembered option: freeze focus (default ON) - menu key F ----
+# The C# part reads the same file when RDCMan starts, so a change applies the next time RDCMan is started.
+$freezeFile = Join-Path $env:APPDATA 'rdcman-color-freezefocus.txt'
+$script:freezeFocus = $true
+try { if ((Get-Content -LiteralPath $freezeFile -ErrorAction Stop | Select-Object -First 1) -eq 'Off') { $script:freezeFocus = $false } } catch { }
+function Save-FreezeFocus {
+    $v = if ($script:freezeFocus) { 'On' } else { 'Off' }
+    try { Set-Content -LiteralPath $freezeFile -Value $v -Encoding UTF8 } catch { }
+}
+function Get-FreezeFocusText { if ($script:freezeFocus) { 'ON' } else { 'OFF' } }
+
 # Accepts a folder (adds RDCMan.exe) or a full .exe path; returns the exe or $null.
 function Resolve-RdcmanExe([string]$PathIn) {
     if (-not $PathIn) { return $null }
@@ -319,9 +340,14 @@ function Select-Theme {
         Write-Host ('  {0}  Custom      (type your own hex colors)' -f ($themes.Count + 1))
         Write-Host '  P  Change RDCMan location'
         Write-Host ('  B  Background around a small session: {0}  (press B to switch)' -f (Get-SessionBgText))
+        Write-Host ('  F  Freeze focus: {0}  (press F to switch)' -f (Get-FreezeFocusText))
         $trText = if ($script:traceOn) { 'ON' } else { 'OFF' }
         Write-Host ('  T  Record a blink trace (this run only): {0}  (press T to switch)' -f $trText)
         Write-Host '  Q  Quit'
+        Write-Host ''
+        Write-Host '  Note - Freeze focus: while the server list gains or loses focus, its repainting is paused so' -ForegroundColor DarkGray
+        Write-Host '  RDCMan''s own color resets cannot flicker it; the selected row is then repainted once.' -ForegroundColor DarkGray
+        Write-Host '  OFF = RDCMan repaints as it normally does. A change applies the next time RDCMan is started.' -ForegroundColor DarkGray
         Write-Host ''
         $in = (Read-Host ('Choose 1-{0}' -f ($themes.Count + 1))).Trim()
         if ($in -match '^[Qq]$') { return $null }
@@ -330,6 +356,12 @@ function Select-Theme {
             $script:sessionBg = -not $script:sessionBg
             Save-SessionBg
             Write-Host ('Background around a small session is now {0}.' -f (Get-SessionBgText)) -ForegroundColor Green
+            continue
+        }
+        if ($in -match '^[Ff]$') {
+            $script:freezeFocus = -not $script:freezeFocus
+            Save-FreezeFocus
+            Write-Host ('Freeze focus is now {0}. It applies the next time RDCMan is started.' -f (Get-FreezeFocusText)) -ForegroundColor Green
             continue
         }
         if ($in -match '^[Tt]$') {
@@ -515,9 +547,25 @@ public static class RdcPaint
         try
         {
             string p = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rdcman-color-options.txt");
-            if (!System.IO.File.Exists(p)) return;
-            string[] words = System.IO.File.ReadAllText(p).Split(new char[] { ' ', '\t', '\r', '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] words = new string[0];
+            if (System.IO.File.Exists(p)) words = System.IO.File.ReadAllText(p).Split(new char[] { ' ', '\t', '\r', '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (string w in words) opts.Add(w.Trim());
+            // Default: the server list is handled like stock RDCMan. The dark theme fades the selected row
+            // between its focused and unfocused greys, and the middle of that fade is the list background -
+            // the highlight seems to vanish for a moment (the blink). Add "darktree" to get the themed list back.
+            if (!opts.Contains("darktree"))
+            {
+                string[] preset = new string[] { "notheme", "selectcolors", "keephot", "keepfade", "freezefocus" };
+                foreach (string w in preset) opts.Add(w);
+            }
+            // Freeze focus: the menu key F decides (remembered in rdcman-color-freezefocus.txt, default On).
+            string ff = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rdcman-color-freezefocus.txt");
+            if (System.IO.File.Exists(ff))
+            {
+                string v = System.IO.File.ReadAllText(ff).Trim();
+                if (v.Equals("Off", StringComparison.OrdinalIgnoreCase)) opts.Remove("freezefocus");
+                else if (v.Equals("On", StringComparison.OrdinalIgnoreCase)) opts.Add("freezefocus");
+            }
         }
         catch { }
     }
@@ -547,9 +595,18 @@ public static class RdcPaint
         int bk = Marshal.ReadInt32(lp, clrOff + 4) & 0xFFFFFF;
         int hi = (int)(GetSysColor(COLOR_HIGHLIGHT) & 0xFFFFFF);
         int face = (int)(GetSysColor(COLOR_BTNFACE) & 0xFFFFFF);
+        int state = Marshal.ReadInt32(lp, 6 * p + 16);                   // CDIS_* flags of this row
         int newBk;
-        if (bk == hi) newBk = Ref(Mix(CBack, CText, 0.40));              // selected row, tree has focus
-        else if (bk == face) newBk = Ref(CAccent);                       // selected row, tree lost focus
+        if ((state & 0x1) != 0)                                          // CDIS_SELECTED
+        {
+            // Decide by what the row IS. While focus moves, the control briefly hands over the selected
+            // row with the list's own background color (an invisible highlight = the blink), so the colors
+            // passed in cannot be trusted for selected rows.
+            bool focused = (state & 0x10) != 0 || GetFocus() == m.HWnd;
+            newBk = focused ? Ref(Mix(CBack, CText, 0.40)) : Ref(CAccent);
+        }
+        else if (bk == hi) newBk = Ref(Mix(CBack, CText, 0.40));         // row the control highlights as focused
+        else if (bk == face) newBk = Ref(CAccent);
         else return;
         Marshal.WriteInt32(lp, clrOff, Ref(CText));
         Marshal.WriteInt32(lp, clrOff + 4, newBk);
@@ -616,6 +673,8 @@ public static class RdcPaint
     {
         public IntPtr Owner;
         public bool IsTree;
+        public bool IsList;             // detail-view list (the "connect servers" popup): rows + header bar
+        public IntPtr HeaderWnd;        // that list's column header window
         public bool Passive;            // recorder only: changes nothing
         public string Label = "";
 
@@ -639,7 +698,23 @@ public static class RdcPaint
             string note = "";
             if (!Passive)
             {
-                if (msg == WM_ERASEBKGND)
+                if (msg == 0x031A && (IsTree || IsList) && classicItemTrees.Contains(m.HWnd))
+                {
+                    m.Result = IntPtr.Zero;
+                    if (rec) TraceAfter(this, ref m, upd, "kept away from the list so its rows stay classic");
+                    return;
+                }
+                if (IsList)
+                {
+                    // Lists are never filled by the guard; only their header bar is drawn here.
+                    if (msg == 0x004E && HeaderWnd != IntPtr.Zero && !Opt("lightheader"))
+                    {
+                        bool done2 = false;
+                        try { done2 = HeaderNotify(this, ref m); } catch { }
+                        if (done2) return;
+                    }
+                }
+                else if (msg == WM_ERASEBKGND)
                 {
                     // A tree that already holds our background color paints that color itself, double
                     // buffered. Filling the SCREEN here first clears the rows for a moment before the
@@ -701,7 +776,7 @@ public static class RdcPaint
                 return;
             }
             base.WndProc(ref m);
-            if (IsTree && !Passive && msg == WM_REFLECT_NOTIFY && Opt("selectcolors")) { try { TweakRow(ref m); } catch { } }
+            if ((IsTree || IsList) && !Passive && msg == WM_REFLECT_NOTIFY && Opt("selectcolors")) { try { TweakRow(ref m); } catch { } }
             if (rec) TraceAfter(this, ref m, upd, note);
         }
 
@@ -1396,6 +1471,7 @@ public static class RdcPaint
             {
                 if (c is TreeView) Protect(c, true);
                 else if (c is ScrollableControl) Protect(c, false);   // forms, panels, split panels, tab pages ...
+                else if (c is ListView && !Opt("darklist")) { ProtectList(c); UpdateHeader(c); }
                 else if (TraceOn) ProtectPassive(c);                  // recorder only
             }
             if (c.BackColor != CBack) c.BackColor = CBack;
@@ -1405,12 +1481,13 @@ public static class RdcPaint
             if (tv != null && tv.IsHandleCreated && !smoothTrees.Contains(tv.Handle))
             {
                 smoothTrees.Add(tv.Handle);
-                SendMessage(tv.Handle, TVM_SETEXTENDEDSTYLE, (IntPtr)TVS_EX_DOUBLEBUFFER, (IntPtr)TVS_EX_DOUBLEBUFFER);
+                if (!Opt("handsoff")) SendMessage(tv.Handle, TVM_SETEXTENDEDSTYLE, (IntPtr)TVS_EX_DOUBLEBUFFER, (IntPtr)TVS_EX_DOUBLEBUFFER);
             }
             if (tv != null && tv.IsHandleCreated) HardenTree(tv);
             if (c is TreeView || c is ListView || c is ListBox || c is TextBoxBase || c is ScrollableControl)
             {
-                Theme(c, Dark ? "DarkMode_Explorer" : "Explorer");
+                if ((c is TreeView || (c is ListView && !Opt("darklist"))) && Opt("notheme")) { if (!Opt("lightscroll")) ThemeScrollbarsOnly(c); }
+                else Theme(c, Dark ? "DarkMode_Explorer" : "Explorer");
                 FrameOnScrollChange(c);
             }
             else if (c is ComboBox)
@@ -1434,6 +1511,136 @@ public static class RdcPaint
     }
 
     // Scrollbars and selection highlight follow the light/dark theme.
+    [DllImport("user32.dll")] static extern IntPtr GetFocus();
+    [DllImport("user32.dll", EntryPoint = "DrawTextW", CharSet = CharSet.Unicode)] static extern int DrawTextW(IntPtr hdc, string text, int len, ref RECT r, int format);
+    [DllImport("gdi32.dll")] static extern int SetTextColor(IntPtr hdc, int color);
+    [DllImport("gdi32.dll")] static extern int SetBkMode(IntPtr hdc, int mode);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct HDITEM
+    {
+        public uint mask; public int cxy; public IntPtr pszText; public IntPtr hbm; public int cchTextMax;
+        public int fmt; public IntPtr lParam; public int iImage; public int iOrder; public uint type;
+        public IntPtr pvFilter; public uint state;
+    }
+
+    // ---- the "connect servers" popup: its list gets classic rows, and its column header bar (a separate
+    // native window that stays white on Windows 10 1909) is drawn here in the list colors -------------
+    static void ProtectList(Control c)
+    {
+        if (!GuardOn || c.IsDisposed || !c.IsHandleCreated) return;
+        IntPtr h = c.Handle;
+        if (guards.ContainsKey(h)) return;
+        Guard g = new Guard();
+        g.Owner = h;
+        g.IsList = true;
+        g.Label = LabelOf(c);
+        try { g.AssignHandle(h); } catch { return; }
+        guards[h] = g;
+    }
+
+    static void UpdateHeader(Control c)
+    {
+        Guard g;
+        if (!c.IsHandleCreated || !guards.TryGetValue(c.Handle, out g) || !g.IsList) return;
+        IntPtr hdr = SendMessage(c.Handle, 0x101F, IntPtr.Zero, IntPtr.Zero);        // LVM_GETHEADER
+        if (hdr == g.HeaderWnd) return;
+        g.HeaderWnd = hdr;
+        if (hdr == IntPtr.Zero) return;
+        Log("list header 0x" + hdr.ToInt64().ToString("X") + " drawn by the script");
+        if (TraceOn) Trace("list " + g.Label + ": header bar taken over (0x" + hdr.ToInt64().ToString("X") + ")");
+        InvalidateRect(hdr, IntPtr.Zero, true);
+    }
+
+    static void FillWith(IntPtr hdc, RECT r, Color c)
+    {
+        IntPtr b = CreateSolidBrush(Ref(c));
+        try { FillRect(hdc, ref r, b); }
+        finally { DeleteObject(b); }
+    }
+
+    static string HeaderText(IntPtr hdr, int index)
+    {
+        IntPtr buf = Marshal.AllocHGlobal(512);
+        IntPtr item = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(HDITEM)));
+        try
+        {
+            HDITEM it = new HDITEM();
+            it.mask = 0x0002;                      // HDI_TEXT
+            it.pszText = buf;
+            it.cchTextMax = 255;
+            Marshal.WriteInt16(buf, 0, 0);
+            Marshal.StructureToPtr(it, item, false);
+            if (SendMessage(hdr, 0x120B, (IntPtr)index, item) == IntPtr.Zero) return "";     // HDM_GETITEMW
+            string s = Marshal.PtrToStringUni(buf);
+            return s == null ? "" : s;
+        }
+        finally { Marshal.FreeHGlobal(item); Marshal.FreeHGlobal(buf); }
+    }
+
+    // NM_CUSTOMDRAW of the header: paint the bar and each title in the list colors.
+    static bool HeaderNotify(Guard g, ref Message m)
+    {
+        IntPtr lp = m.LParam;
+        if (lp == IntPtr.Zero) return false;
+        int p = IntPtr.Size;
+        if (Marshal.ReadIntPtr(lp, 0) != g.HeaderWnd) return false;
+        if (Marshal.ReadInt32(lp, p * 2) != -12) return false;
+        int stage = Marshal.ReadInt32(lp, p * 3);
+        IntPtr hdc = Marshal.ReadIntPtr(lp, 4 * p);
+        RECT rc = new RECT();
+        rc.L = Marshal.ReadInt32(lp, 5 * p); rc.T = Marshal.ReadInt32(lp, 5 * p + 4);
+        rc.R = Marshal.ReadInt32(lp, 5 * p + 8); rc.B = Marshal.ReadInt32(lp, 5 * p + 12);
+        Color bar = Mix(CBack, CText, 0.12);
+        if (stage == 0x1)                                   // whole bar
+        {
+            FillWith(hdc, rc, bar);
+            m.Result = (IntPtr)0x20;                        // CDRF_NOTIFYITEMDRAW
+            return true;
+        }
+        if (stage == 0x10001)                               // one title
+        {
+            int index = Marshal.ReadInt32(lp, 5 * p + 16);
+            FillWith(hdc, rc, bar);
+            RECT divider = rc;
+            divider.L = rc.R - 1;
+            FillWith(hdc, divider, CLine);
+            RECT tr = rc;
+            tr.L += 6; tr.R -= 6;
+            SetBkMode(hdc, 1);                              // TRANSPARENT
+            SetTextColor(hdc, Ref(CText));
+            string s = HeaderText(g.HeaderWnd, index);
+            if (s.Length > 0) DrawTextW(hdc, s, -1, ref tr, 0x8824);   // left, v-centre, one line, ellipsis, no &-prefix
+            m.Result = (IntPtr)0x4;                         // CDRF_SKIPDEFAULT
+            return true;
+        }
+        return false;
+    }
+    static readonly HashSet<IntPtr> classicItemTrees = new HashSet<IntPtr>();
+
+    // Dark scrollbars with classic (non-animated) rows. The list first drops its theme, so its rows are
+    // drawn the classic way; then it gets the dark theme (scrollbars), and the guard keeps the resulting
+    // theme-change notice away from the list so the rows stay classic.
+    static void ThemeScrollbarsOnly(Control c)
+    {
+        if (!c.IsHandleCreated) return;
+        IntPtr h = c.Handle;
+        if (themed.Contains(h)) return;
+        themed.Add(h);
+        try
+        {
+            SetWindowTheme(h, "", "");
+            classicItemTrees.Add(h);
+            SetWindowTheme(h, Dark ? "DarkMode_Explorer" : "Explorer", null);
+            SetWindowPos(h, IntPtr.Zero, 0, 0, 0, 0, SWP_REFRESH_FRAME);
+            RedrawWindow(h, IntPtr.Zero, IntPtr.Zero, RDW_FRAME_NOW);
+            Log("server tree: dark scrollbars, classic rows");
+            if (TraceOn) Trace("tree 0x" + h.ToInt64().ToString("X") + ": dark scrollbars with classic rows applied");
+        }
+        catch { }
+    }
+
     static void Theme(Control c, string name)
     {
         if (!c.IsHandleCreated) return;
@@ -1649,6 +1856,7 @@ function Invoke-HookMode($Theme, [string]$Exe) {
         Write-Host ''
         Write-Host ('Using "{0}": back {1}, text {2}, lines {3}' -f $Theme.Name, $Theme.Back, $Theme.Text, $Theme.Line) -ForegroundColor Green
         Write-Host ('Background around a small session: {0}' -f (Get-SessionBgText))
+        Write-Host ('Freeze focus: {0}' -f (Get-FreezeFocusText))
         Write-Host "Starting $Exe (RDCMan 3.x)"
 
         $env:DOTNET_STARTUP_HOOKS = $dll
@@ -1878,6 +2086,7 @@ if (-not $HostChild) {
         Write-Host ''
         Write-Host ('Using "{0}": back {1}, text {2}, lines {3}' -f $theme.Name, $theme.Back, $theme.Text, $theme.Line) -ForegroundColor Green
         Write-Host ('Background around a small session: {0}' -f (Get-SessionBgText))
+        Write-Host ('Freeze focus: {0}' -f (Get-FreezeFocusText))
         if ($script:traceOn) { Write-Host "Blink trace is ON - recording to $traceLog" -ForegroundColor Cyan }
         Write-Host "Starting $hostExe"
         Write-Host 'Everything except the remote screens is recolored. Keep this window open.'
