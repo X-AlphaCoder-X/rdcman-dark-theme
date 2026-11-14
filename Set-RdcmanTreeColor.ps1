@@ -406,6 +406,9 @@ public static class RdcPaint
     [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
     static extern int SetWindowTheme(IntPtr h, string app, string id);
 
+    [DllImport("user32.dll", EntryPoint = "DefWindowProcW")]
+    static extern IntPtr DefWindowProc(IntPtr h, int msg, IntPtr w, IntPtr l);
+
     [DllImport("user32.dll")]
     static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
@@ -700,7 +703,9 @@ public static class RdcPaint
             {
                 if (msg == 0x031A && (IsTree || IsList) && classicItemTrees.Contains(m.HWnd))
                 {
-                    m.Result = IntPtr.Zero;
+                    // Windows itself still gets the notice, so the scrollbars pick up the dark theme even
+                    // when the list was already on screen (the theme is applied after the window is built).
+                    m.Result = DefWindowProc(m.HWnd, msg, m.WParam, m.LParam);
                     if (rec) TraceAfter(this, ref m, upd, "kept away from the list so its rows stay classic");
                     return;
                 }

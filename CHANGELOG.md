@@ -2,6 +2,12 @@
 
 Versions follow [Semantic Versioning](https://semver.org/). Each version is a [GitHub release](../../releases) with a zip of the files.
 
+## 1.1.2 - 2026-11-14
+
+### Fixed
+
+- Minor scrollbar fix. Since 1.1.1 the server list scrollbar was light again when it should be dark grey. That version applies the dark theme only after a window is fully built, and by then Windows has already drawn the scrollbar. The script holds back the theme change notice from the list so its rows stay classic, and that also stopped Windows from redrawing the scrollbar. Windows now still gets the notice and the list still doesn't, so the scrollbar is dark again and the rows stay classic. The 1.1.1 crash fix is unchanged.
+
 ## 1.1.1 - 2026-11-05
 
 ### Fixed
